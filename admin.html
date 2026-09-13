@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mandacaru • Administração</title>
+<style>
+:root{--g:#315b3b;--g2:#23452c;--o:#b65d16;--b:#4b2f16;--c:#fbf0dc;--p:#fffdf8;--bd:#e4d7c4;--tx:#252525;--mu:#71695e;--red:#b83a2f;--shadow:0 14px 36px #3212}
+*{box-sizing:border-box}body{margin:0;background:var(--c);color:var(--tx);font-family:Arial,Helvetica,sans-serif}button,input{font:inherit}.container{width:min(1180px,94%);margin:auto}header{background:var(--g2);color:#fff;padding:14px 0;position:sticky;top:0;z-index:10}.nav{display:flex;justify-content:space-between;align-items:center;gap:12px}.brand{font:900 23px Georgia,serif}button{cursor:pointer;border:0;border-radius:10px;padding:10px 13px;font-weight:800}.logout{background:#fff;color:var(--g2)}main{padding:34px 0}h1,h2{font-family:Georgia,serif;color:var(--b)}.login{max-width:430px;margin:50px auto;background:var(--p);padding:24px;border-radius:20px;border:1px solid var(--bd);box-shadow:var(--shadow)}label{display:block;font-weight:800;font-size:14px;margin:12px 0}input{width:100%;padding:12px;border:1px solid var(--bd);border-radius:10px;margin-top:6px}.primary{background:var(--g);color:#fff;width:100%;margin-top:8px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab{background:#fff;border:1px solid var(--bd)}.tab.on{background:var(--g);color:#fff}.panel{display:none}.panel.on{display:block}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:var(--p);border:1px solid var(--bd);border-radius:18px;padding:17px;box-shadow:var(--shadow)}.card h3{font:800 19px Georgia,serif;color:var(--g);margin:0 0 8px}.row{display:flex;gap:8px;align-items:center}.stocknum{font-size:30px;font-weight:900;color:var(--b)}.save{background:var(--g);color:#fff}.danger{background:#f5d7d4;color:#8b2820}.ok{background:#daf0df;color:#215b2e}.muted{color:var(--mu);font-size:13px}.order{background:#fff;border:1px solid var(--bd);border-radius:16px;padding:16px;margin:10px 0}.orderhead{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}select{padding:9px;border:1px solid var(--bd);border-radius:9px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:15px 0}.metric{background:#fff;border:1px solid var(--bd);border-radius:14px;padding:15px}.metric b{display:block;font-size:26px;color:var(--g)}.hidden{display:none!important}@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}.summary{grid-template-columns:1fr 1fr}}@media(max-width:520px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><div class="container nav"><div class="brand">🌵 Mandacaru • Administração</div><button id="logoutBtn" class="logout hidden" onclick="logout()">Sair</button></div></header>
+<main class="container">
+<section id="login" class="login"><h1>Entrar</h1><p class="muted">Use o e-mail e a senha cadastrados no Firebase Authentication.</p><label>E-mail<input id="email" type="email"></label><label>Senha<input id="senha" type="password"></label><button class="primary" onclick="login()">Entrar</button><div id="loginMsg" class="muted"></div></section>
+<section id="app" class="hidden">
+<h1>Painel Mandacaru</h1>
+<div class="summary"><div class="metric">Produtos visíveis<b id="mVisible">0</b></div><div class="metric">Estoque total<b id="mStock">0</b></div><div class="metric">Pedidos hoje<b id="mOrders">0</b></div><div class="metric">Faturamento hoje<b id="mRevenue">R$ 0,00</b></div></div>
+<div class="tabs"><button class="tab on" onclick="showTab('estoque',this)">📦 Estoque</button><button class="tab" onclick="showTab('pedidos',this)">🧾 Pedidos</button></div>
+<section id="estoque" class="panel on"><h2>Estoque e disponibilidade</h2>
+<p class="muted">Para aparecer no site, o produto precisa estar disponível e ter estoque maior que 0. Ao salvar uma quantidade maior que 0, ele é ativado automaticamente. Se salvar 0, ele fica indisponível e some do site.</p>
+<div class="row" style="margin:12px 0 18px"><button class="save" onclick="syncCatalog()">🔄 Sincronizar catálogo</button><span id="syncMsg" class="muted"></span></div>
+<div id="productsGrid" class="grid"></div></section>
+<section id="pedidos" class="panel"><h2>Pedidos</h2><div id="orders"></div></section>
+</section>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script>
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBHhp7EfH455Va7zjs3Ot3CDM5tqaeAcdo",
+  authDomain: "mandacaru-ea698.firebaseapp.com",
+  projectId: "mandacaru-ea698",
+  storageBucket: "mandacaru-ea698.firebasestorage.app",
+  messagingSenderId: "709313199244",
+  appId: "1:709313199244:web:5beefd125473c430f3cfa9"
+};
+
+firebase.initializeApp(firebaseConfig);const auth=firebase.auth(),db=firebase.firestore();
+const money=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const CATALOG=[
+['cuscuz_calabresa','Cuscuz com calabresa','marmitas',8,'🌽'],
+['cuscuz_carne_moida','Cuscuz com carne moída','marmitas',8,'🌽'],
+['cuscuz_frango','Cuscuz com frango','marmitas',8,'🌽'],
+['batata_calabresa','Batata-doce com calabresa','marmitas',8,'🍠'],
+['batata_carne_moida','Batata-doce com carne moída','marmitas',8,'🍠'],
+['batata_frango','Batata-doce com frango','marmitas',8,'🍠'],
+['macaxeira_calabresa','Macaxeira com calabresa','marmitas',8,'🥔'],
+['macaxeira_carne_moida','Macaxeira com carne moída','marmitas',8,'🥔'],
+['macaxeira_frango','Macaxeira com frango','marmitas',8,'🥔'],
+['especial_charque','Cuscuz com charque desfiada e queijo coalho','especiais',13,'🍲'],
+['especial_arroz_frango','Arroz com legumes, frango e batata cozida/refogada','especiais',13,'🍚'],
+['suco_acerola','Suco de acerola','sucos',5,'🧃'],
+['suco_caju','Suco de caju','sucos',5,'🧃'],
+['suco_manga','Suco de manga','sucos',5,'🥭'],
+['brig_tradicional','Brigadeiro tradicional 50%','brigadeiros',3,'🍫'],
+['brig_ninho','Brigadeiro de leite Ninho','brigadeiros',3,'🥛'],
+['brig_churros','Brigadeiro de churros','brigadeiros',3,'🍩'],
+['brig_pudim','Brigadeiro de pudim','brigadeiros',3,'🍮']
+];
+let products=[],orders=[];
+async function login(){try{await auth.signInWithEmailAndPassword(document.getElementById('email').value.trim(),document.getElementById('senha').value)}catch(e){document.getElementById('loginMsg').textContent='Não foi possível entrar: '+e.message}}
+function logout(){auth.signOut()}
+function showTab(id,btn){document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.getElementById(id).classList.add('on');btn.classList.add('on')}
+async function ensureCatalog(){
+ const batch=db.batch();
+ for(const [id,nome,categoria,preco,emoji] of CATALOG){
+   const ref=db.collection('produtos').doc(id);
+   const snap=await ref.get();
+   if(!snap.exists){
+     batch.set(ref,{nome,categoria,preco,emoji,estoque:0,ativo:false,criado_em:firebase.firestore.FieldValue.serverTimestamp()});
+   }else{
+     const old=snap.data()||{};
+     const estoque = old.estoque!==undefined ? Number(old.estoque||0) :
+                     old.quantidade!==undefined ? Number(old.quantidade||0) : 0;
+     const ativo = typeof old.ativo==='boolean' ? old.ativo :
+                   typeof old.disponivel==='boolean' ? old.disponivel : estoque>0;
+     batch.set(ref,{nome,categoria,preco,emoji,estoque,ativo,atualizado_em:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+   }
+ }
+ await batch.commit();
+}
+async function syncCatalog(){
+ const el=document.getElementById('syncMsg');
+ try{
+   el.textContent='Sincronizando...';
+   await ensureCatalog();
+   el.textContent='Catálogo sincronizado. Suco de Caju incluído.';
+ }catch(e){
+   console.error(e);
+   el.textContent='Erro ao sincronizar: '+e.message;
+ }
+}
+function renderProducts(){
+ document.getElementById('productsGrid').innerHTML=products.sort((a,b)=>a.nome.localeCompare(b.nome)).map(p=>{
+   const stock = p.estoque!==undefined ? Number(p.estoque||0) : Number(p.quantidade||0);
+   const active = typeof p.ativo==='boolean' ? p.ativo : (typeof p.disponivel==='boolean' ? p.disponivel : false);
+   const visible = active && stock>0;
+   return `<div class="card"><h3>${p.emoji||'🍱'} ${p.nome}</h3><div class="muted">${money(p.preco)} • ${p.categoria}</div>
+   <label>Quantidade disponível<input id="stock_${p.id}" type="number" min="0" step="1" value="${stock}"></label>
+   <div class="row"><button class="${active?'ok':'danger'}" onclick="toggleActive('${p.id}',${active},${stock})">${active?'✅ Disponível':'❌ Indisponível'}</button>
+   <button class="save" onclick="saveStock('${p.id}')">Salvar estoque</button></div>
+   <div class="muted" style="margin-top:9px">${visible?'✅ Aparece no site':'🚫 Oculto do site — '+(!active?'indisponível':'estoque zerado')}</div></div>`;
+ }).join('');
+ const visible=products.filter(p=>{
+   const stock=p.estoque!==undefined?Number(p.estoque||0):Number(p.quantidade||0);
+   const active=typeof p.ativo==='boolean'?p.ativo:(typeof p.disponivel==='boolean'?p.disponivel:false);
+   return active&&stock>0;
+ }).length;
+ const total=products.reduce((s,p)=>s+(p.estoque!==undefined?Number(p.estoque||0):Number(p.quantidade||0)),0);
+ document.getElementById('mVisible').textContent=visible;
+ document.getElementById('mStock').textContent=total;
+}
+async function saveStock(id){
+ const value=Math.max(0,parseInt(document.getElementById('stock_'+id).value||'0'));
+ await db.collection('produtos').doc(id).update({estoque:value,ativo:value>0,atualizado_em:firebase.firestore.FieldValue.serverTimestamp()});
+}
+async function toggleActive(id,current,stock){
+ if(current){
+   await db.collection('produtos').doc(id).update({ativo:false,atualizado_em:firebase.firestore.FieldValue.serverTimestamp()});
+ }else{
+   if(Number(stock||0)<=0){alert('Coloque uma quantidade maior que 0 e clique em “Salvar estoque”.');return;}
+   await db.collection('produtos').doc(id).update({ativo:true,atualizado_em:firebase.firestore.FieldValue.serverTimestamp()});
+ }
+}
+function renderOrders(){
+ const el=document.getElementById('orders');el.innerHTML=orders.length?orders.map(o=>`<div class="order"><div class="orderhead"><div><strong>${o.codigo||o.id}</strong><div>${o.cliente_nome||''} • ${o.telefone||''}</div><div class="muted">${o.data_retirada||''} ${o.horario_retirada||''} • ${o.forma_pagamento||''}</div></div><strong>${money(o.total)}</strong></div><div style="margin:10px 0">${(o.itens||[]).map(i=>`${i.quantidade}x ${i.nome}`).join('<br>')}</div><select onchange="setStatus('${o.id}',this.value)">${['novo','confirmado','em preparo','pronto','entregue','cancelado'].map(s=>`<option ${o.status===s?'selected':''}>${s}</option>`).join('')}</select></div>`).join(''):'<div class="muted">Nenhum pedido.</div>';
+ const today=new Date().toISOString().slice(0,10),tod=orders.filter(o=>o.data_retirada===today);
+ document.getElementById('mOrders').textContent=tod.length;document.getElementById('mRevenue').textContent=money(tod.filter(o=>o.status!=='cancelado').reduce((s,o)=>s+Number(o.total||0),0));
+}
+async function setStatus(id,status){await db.collection('pedidos').doc(id).update({status,atualizado_em:firebase.firestore.FieldValue.serverTimestamp()})}
+auth.onAuthStateChanged(async user=>{
+ document.getElementById('login').classList.toggle('hidden',!!user);document.getElementById('app').classList.toggle('hidden',!user);document.getElementById('logoutBtn').classList.toggle('hidden',!user);
+ if(user){
+   await ensureCatalog();
+   db.collection('produtos').onSnapshot(s=>{products=s.docs.map(d=>({id:d.id,...d.data()}));renderProducts()});
+   db.collection('pedidos').orderBy('criado_em','desc').limit(100).onSnapshot(s=>{orders=s.docs.map(d=>({id:d.id,...d.data()}));renderOrders()});
+ }
+});
+</script>
+</body></html>
